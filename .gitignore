@@ -1,0 +1,17 @@
+# Binaries
+philosophers/philosophers
+producer-consumer/producer-consumer
+*.exe
+*.test
+*.out
+
+# Go tooling
+coverage.txt
+*.prof
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
