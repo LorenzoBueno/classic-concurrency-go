@@ -27,6 +27,7 @@ This repository contains two independent Go programs that solve classic synchron
 
 - Go 1.21 or later (adjust to the version in `go.mod`) 
     - Install in cmd with 'winget install GoLang.Go'
+    - winget install -e --id BrechtSanders.WinLibs.POSIX.UCRT
 - No external dependencies
 
 ## Problem 1: Dining Philosophers
