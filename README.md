@@ -70,7 +70,7 @@ P producers and C consumers share a buffer of capacity K. Producers block when t
 
 ### Versions
 
-- **Channel version:** the buffer is a Go channel with capacity K, relying on Go's native blocking semantics.
+- **Channel version (implemented):** the buffer is a Go channel with capacity K, relying on Go's native blocking semantics. Producers are coordinated with a `sync.WaitGroup`; after all of them finish, the coordinator closes the channel so consumers can drain the remaining items and stop. Consumer 0 uses `select` with a timeout and continues waiting after each timeout.
 - **Semaphore version:** the buffer is a shared data structure protected by counting semaphores (`notEmpty`, `notFull`) and mutual exclusion on the read and write positions, so that no two producers write to the same slot and no two consumers take the same item.
 
 ### Features
@@ -92,6 +92,7 @@ go run -race . -impl=channel -p=4 -c=4 -k=10 -items=1000
 | `-c` | Number of consumers |
 | `-k` | Buffer capacity |
 | `-items` | Items produced per producer |
+| `-timeout` | Timeout used by consumer 0 (default: `10ms`) |
 
 ### Collected metrics
 
@@ -100,6 +101,8 @@ Varying K (e.g., 1, 10, 100) with P and C fixed:
 - Total throughput
 - Items consumed per consumer
 - Average buffer occupancy
+
+The channel version also reports the produced and consumed totals and the number of timeouts. Its average occupancy is an approximation calculated from samples of `len(buffer)` taken after sends and receives. Experimental runs for the report should be recorded in `results/producer-consumer.csv`.
 
 ## Data race detection
 
