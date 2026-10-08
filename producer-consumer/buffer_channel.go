@@ -35,8 +35,8 @@ func runChannel(config Config) Result {
 	return metrics.result(time.Since(start))
 }
 
-func printResult(result Result, config Config) {
-	fmt.Println("Implementacao: channel")
+func printResult(result Result, config Config, implementation string) {
+	fmt.Println("Implementacao:", implementation)
 	fmt.Printf("Produtores: %d | Consumidores: %d | Capacidade: %d\n", config.Producers, config.Consumers, config.BufferCapacity)
 	fmt.Printf("Produzidos: %d\n", result.Produced)
 	fmt.Printf("Consumidos: %d\n", result.Consumed)
