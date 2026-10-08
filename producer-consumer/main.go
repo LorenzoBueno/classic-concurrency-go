@@ -35,7 +35,7 @@ func (c Config) validate() error {
 }
 
 func main() {
-	implementation := flag.String("impl", "channel", "implementacao do buffer: channel")
+	implementation := flag.String("impl", "channel", "implementacao do buffer: channel ou semaphore")
 	producers := flag.Int("p", 4, "numero de produtores")
 	consumers := flag.Int("c", 4, "numero de consumidores")
 	capacity := flag.Int("k", 10, "capacidade do buffer")
@@ -43,8 +43,8 @@ func main() {
 	timeout := flag.Duration("timeout", 10*time.Millisecond, "timeout do primeiro consumidor")
 	flag.Parse()
 
-	if *implementation != "channel" {
-		fmt.Fprintf(os.Stderr, "implementacao %q ainda nao esta disponivel; use -impl=channel\n", *implementation)
+	if *implementation != "channel" && *implementation != "semaphore" {
+		fmt.Fprintf(os.Stderr, "implementacao %q invalida; use -impl=channel ou -impl=semaphore\n", *implementation)
 		os.Exit(2)
 	}
 
@@ -60,8 +60,13 @@ func main() {
 		os.Exit(2)
 	}
 
-	result := runChannel(config)
-	printResult(result, config)
+	var result Result
+	if *implementation == "semaphore" {
+		result = runSemaphore(config)
+	} else {
+		result = runChannel(config)
+	}
+	printResult(result, config, *implementation)
 	if result.Produced != result.Consumed {
 		fmt.Fprintln(os.Stderr, "erro: o total produzido difere do total consumido")
 		os.Exit(1)
