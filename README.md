@@ -8,7 +8,7 @@ This repository contains two independent Go programs that solve classic synchron
 
 - Antonio Augusto Fell Dal Bem
 - Arthur de Oliveira Ferreira
-- Gabriel Michealsen Borges
+- Gabriel Michaelsen Borges
 - Lorenzo Santos de Souza de Moraes Bueno
 
 ## Repository structure
