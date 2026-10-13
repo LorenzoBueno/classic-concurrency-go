@@ -20,7 +20,7 @@ This repository contains two independent Go programs that solve classic synchron
 ├── philosophers/        # Problem 1: Dining Philosophers
 ├── producer-consumer/   # Problem 2: Bounded-Buffer Producer/Consumer
 ├── results/             # Collected execution data (CSV)
-└── report/              # PDF report (3-5 pages)
+└── report/              # PDF report
 ```
 
 ## Requirements
