@@ -25,10 +25,14 @@ func hierarchyPhilosopher(id int, s *System) {
 		if !s.acquire(first) {
 			return
 		}
+		waited := time.Since(start)
+		start = time.Now()
 		if !s.acquire(second) {
+			s.release(first)
 			return
 		}
-		s.Metrics.recordMeal(id, time.Since(start))
+		waited += time.Since(start)
+		s.Metrics.recordMeal(id, waited)
 
 		eat()
 

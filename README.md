@@ -25,7 +25,7 @@ This repository contains two independent Go programs that solve classic synchron
 
 ## Requirements
 
-- Go 1.21 or later (adjust to the version in `go.mod`) 
+- Go 1.27 or later (the version declared in `go.mod`)
     - Install in cmd with 'winget install GoLang.Go'
     - winget install -e --id BrechtSanders.WinLibs.POSIX.UCRT
 - No external dependencies
@@ -38,23 +38,25 @@ N philosophers sit at a circular table, with forks modeled as channels. The prog
 
 | Version | Strategy | Deadlock-free |
 |---------|----------|---------------|
-| `naive` | Everyone picks the left fork first | No (demonstrates deadlock) |
+| `naive` | Everyone picks the left fork first; a barrier makes the deadlock reproducible | No (demonstrates deadlock) |
 | `hierarchy` | Resource hierarchy (symmetry breaking) | Yes |
 | `limit` | At most N-1 philosophers at the table | Yes |
-| `waiter` | Centralized arbitration by a waiter process | Yes |
 
 ### Running
 
 ```bash
 cd philosophers
-go run -race . -version=hierarchy -n=5 -r=100
+go run -race . -version=limit -n=5 -r=100
 ```
 
 | Flag | Description |
 |------|-------------|
-| `-version` | `naive`, `hierarchy`, `limit` or `waiter` |
+| `-version` | `naive`, `hierarchy` or `limit` |
 | `-n` | Number of philosophers |
 | `-r` | Number of iterations per philosopher |
+| `-timeout` | Interval without fork progress before the execution is stopped (default: `2s`) |
+| `-csv` | Optional CSV output path for per-philosopher measurements |
+| `-rep` | Repetition number recorded in the CSV |
 
 ### Collected metrics
 
@@ -62,6 +64,7 @@ go run -race . -version=hierarchy -n=5 -r=100
 - Average fork waiting time per philosopher
 
 These are used in the report to compare the fairness of each strategy.
+The reported fork wait time covers only the channel receives that acquire forks; thinking, eating, and waiting at the N-1 entry limit are excluded. The limit strategy prevents deadlock by ensuring at least one philosopher can always acquire both forks. It does not guarantee starvation freedom because Go channel scheduling is not a strict FIFO fairness guarantee.
 
 > Note: the `naive` version is expected to deadlock. It exists to demonstrate the problem.
 
@@ -107,16 +110,20 @@ The channel version also reports the produced and consumed totals and the number
 
 ## Data race detection
 
-All programs run cleanly with the race detector:
+Run each program from its own directory with the race detector:
 
 ```bash
-go run -race .
+cd philosophers
+go run -race . -version=limit -n=5 -r=100
+
+cd ../producer-consumer
+go run -race . -impl=channel -p=4 -c=4 -k=10 -items=1000
 ```
 
 ## Report
 
-The PDF report is in `report/` and covers the design decisions, deadlock/starvation analysis (Coffman conditions), fairness data, the effect of buffer size, how orderly shutdown was implemented, and the use of AI tools.
+Before submission, place the required 3-5 page PDF report in `report/`. It should cover the design decisions, deadlock/starvation analysis (Coffman conditions), fairness data, the effect of buffer size, how orderly shutdown was implemented, and the use of AI tools.
 
 ## References
 
-See the references section of the report.
+List all external sources consulted in the submitted report.

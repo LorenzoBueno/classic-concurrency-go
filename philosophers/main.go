@@ -11,13 +11,15 @@ import (
 )
 
 type System struct {
-	N        int
-	R        int
-	Forks    []chan struct{} 
-	Done     chan struct{}   
-	Progress atomic.Int64   
-	WG       sync.WaitGroup
-	Metrics  *Metrics
+	N          int
+	R          int
+	Forks      []chan struct{}
+	Done       chan struct{}
+	Progress   atomic.Int64
+	WG         sync.WaitGroup
+	Metrics    *Metrics
+	NaiveReady chan struct{}
+	NaiveStart chan struct{}
 }
 
 func newSystem(n, r int) *System {
@@ -53,7 +55,7 @@ func think() { time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond) }
 func eat()   { time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond) }
 
 func main() {
-	version := flag.String("version", "hierarchy", "naive, hierarchy, limit ou waiter")
+	version := flag.String("version", "hierarchy", "naive, hierarchy ou limit")
 	n := flag.Int("n", 5, "número de filósofos")
 	r := flag.Int("r", 100, "número de iterações (refeições) por filósofo")
 	timeout := flag.Duration("timeout", 2*time.Second, "tempo sem progresso para declarar deadlock")
@@ -73,11 +75,8 @@ func main() {
 		runNaive(sys)
 	case "hierarchy":
 		runHierarchy(sys)
-	// TODO (colega): descomentar quando implementar
-	// case "limit":
-	//	runLimit(sys)
-	// case "waiter":
-	//	runWaiter(sys)
+	case "limit":
+		runLimit(sys)
 	default:
 		fmt.Fprintf(os.Stderr, "versão %q inválida ou ainda não implementada\n", *version)
 		os.Exit(2)
