@@ -67,6 +67,7 @@ func (m *Metrics) report(version string, n, r int, elapsed time.Duration, deadlo
 		version, n, r, elapsed.Round(time.Millisecond))
 	if deadlock {
 		fmt.Println(">>> DEADLOCK DETECTADO: nenhum progresso; execução encerrada de forma ordenada.")
+		fmt.Println(">>> Índices de fairness não mensuráveis: a execução não completou as iterações previstas.")
 	} else {
 		fmt.Println(">>> Execução concluída sem deadlock.")
 	}
@@ -78,9 +79,14 @@ func (m *Metrics) report(version string, n, r int, elapsed time.Duration, deadlo
 		fmt.Printf("%-10d %-10d %-16v %-16v\n", i, s.Meals,
 			s.avgWait().Round(time.Microsecond), s.MaxWait.Round(time.Microsecond))
 	}
-	fmt.Printf("\nÍndice de Jain (refeições):    %.4f\n", jain(meals))
-	fmt.Printf("Índice de Jain (espera média): %.4f\n", jain(m.avgWaitsAsFloat()))
-	fmt.Println("(1.0 = perfeitamente justo)")
+	if deadlock {
+		fmt.Println("\nÍndice de Jain (refeições):    n/a")
+		fmt.Println("Índice de Jain (espera média): n/a")
+	} else {
+		fmt.Printf("\nÍndice de Jain (refeições):    %.4f\n", jain(meals))
+		fmt.Printf("Índice de Jain (espera média): %.4f\n", jain(m.avgWaitsAsFloat()))
+	}
+	fmt.Println("(1.0 = perfeitamente justo; n/a = fairness não mensurável)")
 }
 
 func (m *Metrics) writeCSV(path, version string, n, r, rep int, elapsed time.Duration, deadlock bool) error {
@@ -104,8 +110,17 @@ func (m *Metrics) writeCSV(path, version string, n, r, rep int, elapsed time.Dur
 		}
 	}
 
-	jw := jain(m.avgWaitsAsFloat())
+	jw := strconv.FormatFloat(jain(m.avgWaitsAsFloat()), 'f', 4, 64)
+	if deadlock {
+		jw = "n/a"
+	}
 	for i, s := range m.stats {
+		avgWait := "n/a"
+		maxWait := "n/a"
+		if s.Meals > 0 {
+			avgWait = strconv.FormatFloat(ms(s.avgWait()), 'f', 3, 64)
+			maxWait = strconv.FormatFloat(ms(s.MaxWait), 'f', 3, 64)
+		}
 		row := []string{
 			version,
 			strconv.Itoa(n),
@@ -115,9 +130,9 @@ func (m *Metrics) writeCSV(path, version string, n, r, rep int, elapsed time.Dur
 			strconv.FormatFloat(ms(elapsed), 'f', 3, 64),
 			strconv.Itoa(i),
 			strconv.Itoa(s.Meals),
-			strconv.FormatFloat(ms(s.avgWait()), 'f', 3, 64),
-			strconv.FormatFloat(ms(s.MaxWait), 'f', 3, 64),
-			strconv.FormatFloat(jw, 'f', 4, 64),
+			avgWait,
+			maxWait,
+			jw,
 		}
 		if err := w.Write(row); err != nil {
 			return err
