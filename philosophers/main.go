@@ -5,90 +5,123 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
-const (
-	maxThink = 10 * time.Millisecond
-	maxEat   = 10 * time.Millisecond
+type System struct {
+	N        int
+	R        int
+	Forks    []chan struct{} 
+	Done     chan struct{}   
+	Progress atomic.Int64   
+	WG       sync.WaitGroup
+	Metrics  *Metrics
+}
 
-	// Pause between picking the first and the second fork. It is the same for
-	// every strategy, so the comparison is fair. In the naive version it makes
-	// the deadlock deterministic: it is longer than maxThink, so every
-	// philosopher already holds the left fork before anyone asks for the right.
-	pauseBetweenForks = 50 * time.Millisecond
-)
+func newSystem(n, r int) *System {
+	s := &System{
+		N:       n,
+		R:       r,
+		Forks:   make([]chan struct{}, n),
+		Done:    make(chan struct{}),
+		Metrics: newMetrics(n),
+	}
+	for i := range s.Forks {
+		s.Forks[i] = make(chan struct{}, 1)
+		s.Forks[i] <- struct{}{}
+	}
+	return s
+}
 
-// strategy is the signature shared by every version of the problem.
-// It must block until all philosophers have finished.
-type strategy func(n int, r int64, m *Metrics)
+func (s *System) acquire(fork int) bool {
+	select {
+	case <-s.Forks[fork]:
+		s.Progress.Add(1)
+		return true
+	case <-s.Done:
+		return false
+	}
+}
+
+func (s *System) release(fork int) {
+	s.Forks[fork] <- struct{}{}
+}
+
+func think() { time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond) }
+func eat()   { time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond) }
 
 func main() {
-	version := flag.String("version", "naive", "naive | hierarchy")
-	n := flag.Int("n", 5, "number of philosophers (N >= 2)")
-	r := flag.Int64("r", 100, "total number of meals to serve (R)")
+	version := flag.String("version", "hierarchy", "naive, hierarchy, limit ou waiter")
+	n := flag.Int("n", 5, "número de filósofos")
+	r := flag.Int("r", 100, "número de iterações (refeições) por filósofo")
+	timeout := flag.Duration("timeout", 2*time.Second, "tempo sem progresso para declarar deadlock")
+	csvPath := flag.String("csv", "", "se informado, acrescenta os resultados a este arquivo CSV")
+	rep := flag.Int("rep", 1, "número da repetição (gravado no CSV)")
 	flag.Parse()
 
 	if *n < 2 || *r < 1 {
-		fmt.Fprintln(os.Stderr, "n must be >= 2 and r must be >= 1")
+		fmt.Fprintln(os.Stderr, "n deve ser >= 2 e r deve ser >= 1")
 		os.Exit(2)
 	}
 
-	strategies := map[string]strategy{
-		"naive":     runNaive,
-		"hierarchy": runHierarchy,
-	}
-	run, ok := strategies[*version]
-	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown version %q\n", *version)
+	sys := newSystem(*n, *r)
+
+	switch *version {
+	case "naive":
+		runNaive(sys)
+	case "hierarchy":
+		runHierarchy(sys)
+	// TODO (colega): descomentar quando implementar
+	// case "limit":
+	//	runLimit(sys)
+	// case "waiter":
+	//	runWaiter(sys)
+	default:
+		fmt.Fprintf(os.Stderr, "versão %q inválida ou ainda não implementada\n", *version)
 		os.Exit(2)
 	}
 
-	m := NewMetrics(*n)
-	done := make(chan struct{})
-	start := time.Now()
+	begin := time.Now()
+
+	finished := make(chan struct{})
 	go func() {
-		run(*n, *r, m)
-		close(done)
+		sys.WG.Wait()
+		close(finished)
 	}()
 
-	// Watchdog: if no meal is served during a full tick, the table is stuck.
-	ticker := time.NewTicker(time.Second)
+	deadlock := false
+	last := sys.Progress.Load()
+	lastChange := time.Now()
+	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
-	last := int64(-1)
+
+loop:
 	for {
 		select {
-		case <-done:
-			fmt.Printf("OK: version=%s n=%d r=%d finished in %v\n",
-				*version, *n, *r, time.Since(start).Round(time.Millisecond))
-			m.Print()
-			return
+		case <-finished:
+			break loop
 		case <-ticker.C:
-			cur := m.TotalMeals()
-			if cur == last {
-				fmt.Printf("DEADLOCK: version=%s n=%d r=%d, no progress for 1s (%d meals served)\n",
-					*version, *n, *r, cur)
-				m.Print()
-				os.Exit(1)
+			cur := sys.Progress.Load()
+			if cur != last {
+				last, lastChange = cur, time.Now()
+			} else if time.Since(lastChange) > *timeout {
+				deadlock = true
+				close(sys.Done)
+				<-finished
+				break loop
 			}
-			last = cur
 		}
 	}
-}
 
-// newForks creates n forks. A fork is a channel with capacity 1:
-// holding a token in the channel means the fork is on the table.
-// Picking up = receive, putting down = send.
-func newForks(n int) []chan struct{} {
-	forks := make([]chan struct{}, n)
-	for i := range forks {
-		forks[i] = make(chan struct{}, 1)
-		forks[i] <- struct{}{}
+	elapsed := time.Since(begin)
+	sys.Metrics.report(*version, *n, *r, elapsed, deadlock)
+
+	if *csvPath != "" {
+		if err := sys.Metrics.writeCSV(*csvPath, *version, *n, *r, *rep, elapsed, deadlock); err != nil {
+			fmt.Fprintf(os.Stderr, "erro ao gravar CSV: %v\n", err)
+			os.Exit(1)
+		}
 	}
-	return forks
-}
-
-// randDuration returns a random duration in [0, upTo).
-func randDuration(upTo time.Duration) time.Duration {
-	return time.Duration(rand.Int63n(int64(upTo)))
 }

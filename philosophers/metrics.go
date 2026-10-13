@@ -1,59 +1,129 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
-	"sync"
+	"os"
+	"strconv"
 	"time"
 )
 
-// Metrics collects, per philosopher, the number of meals and the time spent
-// waiting for forks (from getting hungry until holding both forks).
+type PhilStats struct {
+	Meals     int
+	TotalWait time.Duration
+	MaxWait   time.Duration
+}
+
+func (s PhilStats) avgWait() time.Duration {
+	if s.Meals == 0 {
+		return 0
+	}
+	return s.TotalWait / time.Duration(s.Meals)
+}
+
 type Metrics struct {
-	mu        sync.Mutex
-	meals     []int64
-	totalWait []time.Duration
-	maxWait   []time.Duration
+	stats []PhilStats
 }
 
-func NewMetrics(n int) *Metrics {
-	return &Metrics{
-		meals:     make([]int64, n),
-		totalWait: make([]time.Duration, n),
-		maxWait:   make([]time.Duration, n),
+func newMetrics(n int) *Metrics {
+	return &Metrics{stats: make([]PhilStats, n)}
+}
+
+func (m *Metrics) recordMeal(id int, wait time.Duration) {
+	s := &m.stats[id]
+	s.Meals++
+	s.TotalWait += wait
+	if wait > s.MaxWait {
+		s.MaxWait = wait
 	}
 }
 
-// Record is called when philosopher id gets both forks and starts eating.
-func (m *Metrics) Record(id int, wait time.Duration) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.meals[id]++
-	m.totalWait[id] += wait
-	if wait > m.maxWait[id] {
-		m.maxWait[id] = wait
+func jain(xs []float64) float64 {
+	var sum, sumSq float64
+	for _, x := range xs {
+		sum += x
+		sumSq += x * x
 	}
+	if sumSq == 0 {
+		return 1
+	}
+	return (sum * sum) / (float64(len(xs)) * sumSq)
 }
 
-func (m *Metrics) TotalMeals() int64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var total int64
-	for _, v := range m.meals {
-		total += v
+func (m *Metrics) avgWaitsAsFloat() []float64 {
+	out := make([]float64, 0, len(m.stats))
+	for _, s := range m.stats {
+		out = append(out, float64(s.avgWait()))
 	}
-	return total
+	return out
 }
 
-func (m *Metrics) Print() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	fmt.Println("philosopher | meals | avg wait    | max wait")
-	for i := range m.meals {
-		var avg time.Duration
-		if m.meals[i] > 0 {
-			avg = m.totalWait[i] / time.Duration(m.meals[i])
+func ms(d time.Duration) float64 {
+	return float64(d) / float64(time.Millisecond)
+}
+
+func (m *Metrics) report(version string, n, r int, elapsed time.Duration, deadlock bool) {
+	fmt.Printf("\n=== version=%s N=%d R=%d | tempo total: %v ===\n",
+		version, n, r, elapsed.Round(time.Millisecond))
+	if deadlock {
+		fmt.Println(">>> DEADLOCK DETECTADO: nenhum progresso; execução encerrada de forma ordenada.")
+	} else {
+		fmt.Println(">>> Execução concluída sem deadlock.")
+	}
+
+	fmt.Printf("%-10s %-10s %-16s %-16s\n", "Filósofo", "Refeições", "Espera média", "Espera máxima")
+	meals := make([]float64, 0, n)
+	for i, s := range m.stats {
+		meals = append(meals, float64(s.Meals))
+		fmt.Printf("%-10d %-10d %-16v %-16v\n", i, s.Meals,
+			s.avgWait().Round(time.Microsecond), s.MaxWait.Round(time.Microsecond))
+	}
+	fmt.Printf("\nÍndice de Jain (refeições):    %.4f\n", jain(meals))
+	fmt.Printf("Índice de Jain (espera média): %.4f\n", jain(m.avgWaitsAsFloat()))
+	fmt.Println("(1.0 = perfeitamente justo)")
+}
+
+func (m *Metrics) writeCSV(path, version string, n, r, rep int, elapsed time.Duration, deadlock bool) error {
+	info, err := os.Stat(path)
+	needHeader := err != nil || info.Size() == 0
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	w := csv.NewWriter(f)
+	if needHeader {
+		header := []string{
+			"version", "n", "r", "repetition", "deadlock", "duration_ms",
+			"philosopher", "meals", "avg_wait_ms", "max_wait_ms", "jain_wait",
 		}
-		fmt.Printf("%11d | %5d | %-11v | %v\n",
-			i, m.meals[i], avg.Round(time.Microsecond), m.maxWait[i].Round(time.Microsecond))
+		if err := w.Write(header); err != nil {
+			return err
+		}
 	}
+
+	jw := jain(m.avgWaitsAsFloat())
+	for i, s := range m.stats {
+		row := []string{
+			version,
+			strconv.Itoa(n),
+			strconv.Itoa(r),
+			strconv.Itoa(rep),
+			strconv.FormatBool(deadlock),
+			strconv.FormatFloat(ms(elapsed), 'f', 3, 64),
+			strconv.Itoa(i),
+			strconv.Itoa(s.Meals),
+			strconv.FormatFloat(ms(s.avgWait()), 'f', 3, 64),
+			strconv.FormatFloat(ms(s.MaxWait), 'f', 3, 64),
+			strconv.FormatFloat(jw, 'f', 4, 64),
+		}
+		if err := w.Write(row); err != nil {
+			return err
+		}
+	}
+
+	w.Flush()
+	return w.Error()
 }
