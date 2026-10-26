@@ -119,11 +119,3 @@ go run -race . -version=limit -n=5 -r=100
 cd ../producer-consumer
 go run -race . -impl=channel -p=4 -c=4 -k=10 -items=1000
 ```
-
-## Report
-
-Before submission, place the required 3-5 page PDF report in `report/`. It should cover the design decisions, deadlock/starvation analysis (Coffman conditions), fairness data, the effect of buffer size, how orderly shutdown was implemented, and the use of AI tools.
-
-## References
-
-List all external sources consulted in the submitted report.
